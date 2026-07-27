@@ -1,11 +1,29 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-27T16:56:32Z",
+  "generated_at": "2026-07-27T19:31:00Z",
   "generated_by": "scripts/benchmark-store.sh",
   "documentation": "benchmarks/README.md",
   "keep_releases": 5,
   "latest_release": "v3.3.2",
   "entries": [
+    {
+      "kind": "manual",
+      "version": null,
+      "label": "perf-connection-pool",
+      "official": false,
+      "recorded_at": "2026-07-27T19:31:00Z",
+      "commit": "49dcaf38f2879248cfffbdfd02d3b87381992e51",
+      "run_url": "https://github.com/eiserv/easySFTP/actions/runs/30298465159",
+      "candidate_ref": "49dcaf38f2879248cfffbdfd02d3b87381992e51 (49dcaf3)",
+      "archived": false,
+      "json": "manual-20260727T193100Z-perf-connection-pool.json",
+      "markdown": "manual-20260727T193100Z-perf-connection-pool.md",
+      "median_ms": {
+        "large": 70694,
+        "mixed": 27665,
+        "small": 13404
+      }
+    },
     {
       "kind": "release",
       "version": "v3.3.2",
