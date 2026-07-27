@@ -1,11 +1,29 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-27T15:55:56Z",
+  "generated_at": "2026-07-27T16:56:32Z",
   "generated_by": "scripts/benchmark-store.sh",
   "documentation": "benchmarks/README.md",
   "keep_releases": 5,
-  "latest_release": "v3.3.1",
+  "latest_release": "v3.3.2",
   "entries": [
+    {
+      "kind": "release",
+      "version": "v3.3.2",
+      "label": null,
+      "official": true,
+      "recorded_at": "2026-07-27T16:56:32Z",
+      "commit": "afe5aaf7cac2a29675887f36f63c3c82b53aa4c3",
+      "run_url": "https://github.com/eiserv/easySFTP/actions/runs/30286969318",
+      "candidate_ref": "v3.3.2 (afe5aaf)",
+      "archived": false,
+      "json": "release-v3.3.2.json",
+      "markdown": "release-v3.3.2.md",
+      "median_ms": {
+        "large": 76306,
+        "mixed": 28419,
+        "small": 13044
+      }
+    },
     {
       "kind": "release",
       "version": "v3.3.1",
