@@ -249,28 +249,3 @@ easySFTP's behavior rather than in a provider's.
 Conventional Commit messages; **never hand-edit `CHANGELOG.md`**. PR titles
 must be Conventional Commits (CI enforces this; squash-merge makes the PR
 title the commit message; see `CONTRIBUTING.md`).
-
-## Automated issue-driving sessions
-
-This repo receives autonomous sessions that each pick an open issue, resolve
-it (making a judgment call where the issue leaves one open; usability and
-user choice win ties, per the principles above), and open a draft PR. No one
-watches these sessions live; everything that matters must end up in the PR
-description or in an issue.
-
-- If you notice something during unrelated work (a typo, an inconsistency,
-  a possible optimization, something you're not confident enough to fix
-  right now), file it as a new GitHub issue rather than letting it evaporate
-  with the session. Label it `needs-check` if it genuinely needs a human or
-  a future session's closer look before acting. The label exists in the repo
-  now; note that `gh issue create --label` does *not* auto-create missing
-  labels (it errors), so a new label needs `gh label create` first.
-- Before working an issue, sanity-check it's still current (code may have
-  moved on since it was filed). If it's stale/already fixed/no longer
-  applicable, close it (with a reason) instead of implementing something
-  moot, and pick another.
-- New feature ideas that fit the SFTP-deploy niche are welcome as new issues;
-  don't implement speculative features nobody asked for in the same PR as an
-  unrelated fix.
-- One issue, one PR. Keep unrelated cleanups you notice out of the diff;
-  file them instead (see above) so the PR stays reviewable.
