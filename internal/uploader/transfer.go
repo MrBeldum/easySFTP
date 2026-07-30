@@ -7,6 +7,9 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
+	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -56,7 +59,7 @@ type transferEnv struct {
 // It returns which files completed, indexed like files, so that on a partial
 // failure the caller knows what actually made it to the server (the sync
 // strategy uses this to persist a recovery manifest).
-func uploadFiles(ctx context.Context, cfg *config.Config, sess *session, files []fileItem, dirs []string, stats *Stats, verb string, watch *stallWatchdog, skipUnchanged bool, log Logger) ([]bool, error) {
+func uploadFiles(ctx context.Context, cfg *config.Config, sess *session, files []fileItem, dirs []string, base string, stats *Stats, verb string, watch *stallWatchdog, skipUnchanged bool, log Logger) ([]bool, error) {
 	// Declared before the first failure point: callers index the returned
 	// slice by file, so it must be sized even when nothing was uploaded.
 	completed := make([]bool, len(files))
@@ -74,6 +77,13 @@ func uploadFiles(ctx context.Context, cfg *config.Config, sess *session, files [
 		if err != nil {
 			return completed, err
 		}
+
+		// Before any upload starts, remove temp files that an earlier killed
+		// run left in the directories this run uploads into; see
+		// sweepStaleTemps.
+		endSweep := metrics.Phase("sweep_stale_temps")
+		sweepStaleTemps(ctx, sess, watch, base, files, log)
+		endSweep()
 	}
 
 	defer metrics.Phase("upload")()
@@ -262,6 +272,149 @@ func cleanupTmp(client *sftp.Client, tmpPath string, log Logger) {
 	if err := client.Remove(tmpPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		log.Warningf("could not remove temporary file %s: %v", tmpPath, err)
 	}
+}
+
+// staleTempMaxAge is how old (by remote modification time) a leftover temp
+// upload file must be before sweepStaleTemps removes it. Concurrent deploys
+// to one target are unsupported, but a sweep that deleted another live run's
+// in-progress temp file would turn that race into a corrupted deploy; the
+// age margin keeps any plausibly-live temp file safe without locking. A
+// variable only so tests can shrink it.
+var staleTempMaxAge = time.Hour
+
+// isTempFileName reports whether name looks like a temporary upload file this
+// action writes: "<name>.easysftp-tmp.<n>" for a file upload (n being the
+// plan index, see uploadFile) or "<name>.easysftp-tmp" for a manifest write
+// (see writeManifest). The suffix is always appended to an existing name, so
+// a file named exactly ".easysftp-tmp" (i == 0) is not one of ours.
+func isTempFileName(name string) bool {
+	i := strings.LastIndex(name, tmpSuffix)
+	if i <= 0 {
+		return false
+	}
+	rest := name[i+len(tmpSuffix):]
+	if rest == "" {
+		return true
+	}
+	if rest[0] != '.' || len(rest) < 2 {
+		return false
+	}
+	for _, c := range rest[1:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// sweepStaleTemps removes temp upload files that an earlier killed run left
+// behind (issue #160). Every in-process failure path already cleans its temp
+// file up, but SIGKILL, a cancelled workflow past its grace period or a
+// reclaimed runner skip all deferred code, and neither overlay nor sync ever
+// deletes a file it did not just write, so the orphans would otherwise sit in
+// the target forever, publicly served when the target is a web root.
+//
+// The swept set is exactly the directories that receive files this run (the
+// parent directory of every planned remote path) plus the deployment's remote
+// base, where the sync manifest's temp file lives even when no changed file
+// does. Nothing above the base is ever listed or touched: a deploy to
+// /var/www/html/blog has no business reading /var. That keeps the added
+// round-trips proportional to the run and the sweep's reach inside the
+// deployment.
+//
+// Three guards bound what the sweep may remove: the name must match the temp
+// pattern (isTempFileName), the entry must be older than staleTempMaxAge (a
+// younger one is plausibly another live run's in-progress upload), and it
+// must not be a planned target of this run (a real deployed file can be named
+// like a temp file; see the literal-name test in atomic_test.go). Staleness
+// compares the runner's clock against the mtime the server reports
+// (time.Since of the entry's ModTime), so a server clock running behind the
+// runner's can make a fresh temp file look older than it is; concurrent
+// deploys to one target are unsupported anyway, so such skew weakens a
+// mitigation rather than creating a new hazard.
+//
+// The sweep deliberately runs for every strategy, the non-destructive overlay
+// included, and has no opt-out: it only ever removes this action's own
+// "*.easysftp-tmp" and "*.easysftp-tmp.<n>" debris, never a file it did not
+// name itself. For the same reason its removals deliberately do not count
+// against safety.max_deletes (which budgets deletions of deployed files) and
+// are not reported in the run's delete stats.
+//
+// Everything is best-effort: each directory runs through sess.do so a dropped
+// connection redials, but a listing or removal failure only warns and never
+// fails the deploy. Removals are logged, so a user who wondered what those
+// files were gets an answer.
+func sweepStaleTemps(ctx context.Context, sess *session, watch *stallWatchdog, base string, files []fileItem, log Logger) {
+	keep := make(map[string]struct{}, len(files))
+	for _, f := range files {
+		keep[f.remotePath] = struct{}{}
+	}
+	touched := make(map[string]struct{}, len(files)+1)
+	// A single-file overlay deploy without a trailing slash resolves base to
+	// the planned file itself, not a directory; its parent joins the set via
+	// path.Dir below, so the file path is skipped here.
+	if _, isPlannedFile := keep[base]; !isPlannedFile {
+		touched[base] = struct{}{}
+	}
+	for _, f := range files {
+		touched[path.Dir(f.remotePath)] = struct{}{}
+	}
+	dirs := make([]string, 0, len(touched))
+	for dir := range touched {
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+	for _, dir := range dirs {
+		_ = sess.do(ctx, watch, func(client *sftp.Client) error {
+			return sweepDirStaleTemps(client, dir, keep, watch, log)
+		})
+	}
+}
+
+// sweepDirStaleTemps sweeps a single remote directory; see sweepStaleTemps.
+// Connection-class errors are returned so sess.do redials and reruns the
+// directory (removals are idempotent); anything else is swallowed after a
+// warning.
+func sweepDirStaleTemps(client *sftp.Client, dir string, keep map[string]struct{}, watch *stallWatchdog, log Logger) error {
+	doneList := metrics.Op("sftp_readdir")
+	entries, err := client.ReadDir(dir)
+	doneList(err)
+	if err != nil {
+		if isConnError(err) {
+			return err
+		}
+		// Best-effort: a directory that cannot be listed is left alone. Not
+		// worth a warning; the run itself has not lost anything.
+		return nil
+	}
+	watch.tick()
+	for _, e := range entries {
+		if e.IsDir() || !isTempFileName(e.Name()) {
+			continue
+		}
+		if time.Since(e.ModTime()) < staleTempMaxAge {
+			continue
+		}
+		full := path.Join(dir, e.Name())
+		if _, ok := keep[full]; ok {
+			continue
+		}
+		done := metrics.Op("sftp_remove")
+		err := client.Remove(full)
+		done(err)
+		if err != nil {
+			if isConnError(err) {
+				return err
+			}
+			if !errors.Is(err, os.ErrNotExist) {
+				log.Warningf("could not remove stale temporary file %s: %v", full, err)
+			}
+			continue
+		}
+		log.Infof("removed stale temporary file %s (left behind by an earlier interrupted run)", full)
+		watch.tick()
+	}
+	return nil
 }
 
 // ctxReader makes an io.Copy abort as soon as the context is cancelled.

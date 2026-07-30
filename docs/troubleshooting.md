@@ -132,10 +132,23 @@ appears to work.
 easySFTP uploads to a temporary sibling file (named `<path>.easysftp-tmp.<n>`)
 and renames it over the target (atomic on servers supporting the
 `posix-rename@openssh.com` extension, with a remove+rename fallback
-otherwise). A hard crash mid-upload can leave such a file behind; it is safe
-to delete manually. It usually gets overwritten by the next upload of the
-same file too, but that isn't guaranteed if the deployment's file set changed
-in the meantime and shifted its plan position.
+otherwise). A hard kill mid-upload (a cancelled workflow past its grace
+period, a job timeout, a reclaimed runner) can leave such a file behind; it
+is safe to delete manually.
+
+Later deploys clean these up automatically: before uploading, every run
+sweeps the directories receiving files in that run, plus the deployment's
+target directory itself, and removes temp files older than an hour (logged
+as `removed stale temporary file ...`). Nothing above the target directory
+is ever listed or touched. The age margin keeps the sweep from deleting a
+concurrently running deploy's in-progress upload. The sweep intentionally
+runs in every mode, `overlay` included, and is on by default: even though
+overlay never deletes your files, the sweep only ever removes the action's
+own `*.easysftp-tmp` / `*.easysftp-tmp.<n>` debris, never a file it did not
+name itself. An orphan in a directory that no later deploy uploads into
+stays until one does, or until you delete it manually. If the target is a
+public web root, also add a deny rule for these names next to the manifest
+rule; see [security.md](security.md#temporary-upload-files-in-web-roots).
 
 ### Ignored files are uploaded anyway / patterns don't match
 
