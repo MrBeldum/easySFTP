@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-07-29T23:18:25Z",
+  "generated_at": "2026-07-30T22:45:49Z",
   "generated_by": "scripts/benchmark-store.sh",
   "documentation": "benchmarks/README.md",
   "layout": {
@@ -13,6 +13,44 @@
   "keep_releases": 5,
   "latest_release": "v3.3.2",
   "entries": [
+    {
+      "kind": "matrix",
+      "version": null,
+      "label": "main",
+      "official": false,
+      "recorded_at": "2026-07-30T22:45:49Z",
+      "commit": "5b23cbaf857188c3dd45dd3257dee610d71f2d84",
+      "run_url": "https://github.com/eiserv/easySFTP/actions/runs/30588246511",
+      "candidate_ref": "5b23cbaf857188c3dd45dd3257dee610d71f2d84 (5b23cba)",
+      "benchmark_kind": "matrix",
+      "benchmark_schema_version": 2,
+      "runner": "self-hosted, Linux 7.0.0-28-generic, 10 cpu",
+      "environment": {
+        "runner": "self-hosted",
+        "os": "Linux",
+        "kernel": "7.0.0-28-generic",
+        "arch": "x86_64",
+        "cpu_model": "Intel(R) Xeon(R) CPU           E5645  @ 2.40GHz",
+        "cpus": 10,
+        "go_version": "go1.25.5",
+        "runner_name": "coolify-runner-jGF0UljK22lP3"
+      },
+      "link_profiles": [
+        "baseline"
+      ],
+      "rtt_p50_ms": 13.02,
+      "archived": false,
+      "json": "matrix/matrix-20260730T224549Z-main.json",
+      "markdown": "matrix/matrix-20260730T224549Z-main.md",
+      "median_ms": {},
+      "best_ms": {
+        "calib-100x64k": 7729,
+        "large": 47665,
+        "single": 83614,
+        "small": 4303,
+        "sync": 1030
+      }
+    },
     {
       "kind": "matrix",
       "version": null,
