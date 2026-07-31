@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-07-30T22:45:49Z",
+  "generated_at": "2026-07-31T09:49:19Z",
   "generated_by": "scripts/benchmark-store.sh",
   "documentation": "benchmarks/README.md",
   "layout": {
@@ -11,8 +11,44 @@
     "latest": "latest.{json,md}"
   },
   "keep_releases": 5,
-  "latest_release": "v3.3.2",
+  "latest_release": "v3.4.0",
   "entries": [
+    {
+      "kind": "release",
+      "version": "v3.4.0",
+      "label": null,
+      "official": true,
+      "recorded_at": "2026-07-31T09:49:19Z",
+      "commit": "ae799b77ec3a23553e2f3ad463061d7a10269803",
+      "run_url": "https://github.com/eiserv/easySFTP/actions/runs/30621299862",
+      "candidate_ref": "v3.4.0 (ae799b7)",
+      "benchmark_kind": "standard",
+      "benchmark_schema_version": 2,
+      "runner": "self-hosted, Linux 7.0.0-28-generic, 10 cpu",
+      "environment": {
+        "runner": "self-hosted",
+        "os": "Linux",
+        "kernel": "7.0.0-28-generic",
+        "arch": "x86_64",
+        "cpu_model": "Intel(R) Xeon(R) CPU           E5645  @ 2.40GHz",
+        "cpus": 10,
+        "go_version": "go1.25.5",
+        "runner_name": "coolify-runner-jGF0UljK22lP3"
+      },
+      "link_profiles": [
+        "baseline"
+      ],
+      "rtt_p50_ms": 13.15,
+      "archived": false,
+      "json": "releases/release-v3.4.0.json",
+      "markdown": "releases/release-v3.4.0.md",
+      "median_ms": {
+        "large": 90269,
+        "mixed": 32035,
+        "small": 13644
+      },
+      "best_ms": {}
+    },
     {
       "kind": "matrix",
       "version": null,
