@@ -15,12 +15,22 @@ import (
 //
 // What it may change, and what it deliberately may not:
 //
-//   - Connections grow. This is the whole point. The pool is dialed lazily, so
+//   - The spread grows. This is the whole point. The pool is dialed lazily, so
 //     raising the number costs one handshake per connection that a worker
 //     then really uses, and the same sqrt(W/H) rule decides whether the work
 //     that is *left* justifies it.
-//   - Connections never shrink. A handshake already paid is sunk, and closing
-//     a connection mid-transfer would abort the files on it.
+//   - The spread comes back down when a step did not pay for itself, and that
+//     is not the same as closing a connection. What moves is how many of the
+//     open connections the files that are *left* are handed to; every
+//     handshake already paid stays paid and every transfer already running
+//     stays where it is (issue #215, stage 5). Before that the controller
+//     could only widen a pool it had widened too far, and the stored 'small'
+//     sweep is what that costs: 4 connections widened to 8 on one thin
+//     window, on a workload whose measured optimum was 2.
+//   - What counts as evidence is narrower than "a number arrived". A window has
+//     to be long enough, see enough files and carry enough bytes, and a byte
+//     rate is only read as a bandwidth when the files were large enough to
+//     produce one (issue #215, stage 6, and see bandwidthBound).
 //   - Concurrency never moves. Plan already sizes it to the number of
 //     independent items, which is the largest value that can ever be busy;
 //     there is nothing for a hill climb to find.
@@ -29,18 +39,33 @@ import (
 //     changing it would mean reconnecting.
 //
 // The controller is deliberately dull. It re-plans, it grows at most to double
-// the current pool per step, and it stops for good the first time a step fails
-// to pay off or the server pushes back. A deploy tool that oscillates its
-// connection count is worse than one that settles on a slightly wrong number.
+// the current pool per step, it takes at most one step back, and it stops for
+// good the first time a step fails to pay off or the server pushes back. A
+// deploy tool that oscillates its connection count is worse than one that
+// settles on a slightly wrong number.
 const (
-	// minObservation is how much transfer has to have happened before the
-	// first decision. Short enough that a run of a few seconds still gets one
+	// minObservation is how long a window has to be before it is a
+	// measurement. Short enough that a run of a few seconds still gets one
 	// adjustment, long enough that the measurement is not one file's noise.
+	//
+	// It is the length of the *window*, not the time since the phase started:
+	// every decision after the first one compares two windows, and a 250 ms
+	// tick against a 750 ms baseline compares two different amounts of
+	// evidence (issue #215, stage 6).
 	minObservation = 750 * time.Millisecond
 
-	// minSamples is the other half of that: a window that saw a single file
+	// minSamples is the second half of that: a window that saw a single file
 	// finish says nothing about throughput.
 	minSamples = 4
+
+	// minWindowBytes is the third. Time and file counts alone let a window of
+	// mostly-empty files decide the size of the pool, which is how a 1 MiB
+	// deployment of 4 KiB files ended up on eight connections. Half a
+	// megabyte is sixteen write packets, one fully pipelined file at the
+	// default request_concurrency, and it is deliberately a floor on
+	// *evidence* rather than on the workload: a transfer too small to produce
+	// it is a transfer too small to be worth a handshake either way.
+	minWindowBytes = MinRequestConcurrency * packetBytes
 
 	// improvementBand is how much better a step has to make things before the
 	// controller believes it. Below this the two windows are the same
@@ -88,23 +113,37 @@ type Controller struct {
 	link    Link
 	current Settings
 
+	// workload is the shape of the transfer being watched. Only its
+	// distribution is read: what the observed byte rate is evidence *of*
+	// depends on whether the files are big enough for a byte rate to mean
+	// anything. See bandwidthBound.
+	workload Workload
+
 	// stopped latches once there is nothing left to try.
 	stopped bool
 	reason  string
 
-	// last is the previous accepted observation, and pending records the
-	// throughput measured just before the most recent growth so the next
-	// observation can tell whether that growth paid off.
-	last        Progress
-	haveLast    bool
+	// last is the previous accepted observation. An observation that is not
+	// evidence yet (too short a window, too few files, too few bytes) does not
+	// replace it, so the window widens until it is one instead of a thin
+	// window deciding the size of the pool.
+	last     Progress
+	haveLast bool
+
+	// pendingRate is the throughput measured just before the most recent
+	// growth, and pendingFrom the spread it grew from, so the next window can
+	// say whether that step paid for itself and, if it did not, where to put
+	// the spread back.
 	pendingRate float64
+	pendingFrom int
 }
 
 // NewController returns the controller for a deployment that Plan resolved to
-// start. It reports nothing to change while every setting it could move is
-// pinned by the user or already at its ceiling.
-func NewController(start Settings, l Link, f Fixed) *Controller {
-	c := &Controller{fixed: f, link: l, current: start}
+// start, watching the workload it was resolved for. It reports nothing to
+// change while every setting it could move is pinned by the user or already at
+// its ceiling.
+func NewController(w Workload, start Settings, l Link, f Fixed) *Controller {
+	c := &Controller{fixed: f, link: l, current: start, workload: w}
 	switch {
 	case f.Connections > 0:
 		c.stop("connections come from the configuration")
@@ -123,9 +162,23 @@ type Change struct {
 	// Rate is the aggregate throughput of the window that motivated the
 	// change, in bytes per second.
 	Rate float64
+	// Before is the throughput of the window before the step this change is
+	// taking back. It is zero for a change that grows the spread, which has no
+	// earlier step to compare against.
+	Before float64
 }
 
+// Shrinks reports whether this change narrows the spread rather than widening
+// it. The two are logged differently and counted separately, because "easySFTP
+// asked for more connections" and "easySFTP stopped using some of the ones it
+// has" are different events on a server.
+func (c Change) Shrinks() bool { return c.To.Connections < c.From.Connections }
+
 func (c Change) String() string {
+	if c.Shrinks() {
+		return fmt.Sprintf("%s is no better than the %s before the spread grew to %d; assigning the remaining files across %d connection(s) instead, without closing any",
+			rateString(c.Rate), rateString(c.Before), c.From.Connections, c.To.Connections)
+	}
 	return fmt.Sprintf("%s over the connections in use; raising connections %d -> %d for the rest of this deployment",
 		rateString(c.Rate), c.From.Connections, c.To.Connections)
 }
@@ -159,12 +212,8 @@ func (c *Controller) Observe(p Progress) (Change, bool) {
 	case p.Failures > 0:
 		c.stop("the transfer is retrying, so this is not the moment to add load")
 		return none, false
-	case p.Remaining <= c.current.Connections:
-		// Fewer files left than connections open: a new one would finish its
-		// handshake with nothing to carry.
-		return none, false
 	}
-	if p.Elapsed < minObservation || p.Uploaded+p.Skipped < minSamples {
+	if !c.eligible(p) {
 		return none, false
 	}
 
@@ -178,14 +227,30 @@ func (c *Controller) Observe(p Progress) (Change, bool) {
 	}
 
 	// Did the previous growth pay for itself? Checked before planning the
-	// next one, so a pool that stopped scaling stops growing.
+	// next one, so a pool that stopped scaling stops growing, and answered by
+	// putting the spread back where it came from rather than by living with
+	// it (issue #215, stage 5).
 	if c.pendingRate > 0 {
 		if rate < c.pendingRate*improvementBand {
-			c.stop(fmt.Sprintf("%s is no faster than the %s before the last connection was added, so the pool stays at %d",
-				rateString(rate), rateString(c.pendingRate), c.current.Connections))
+			return c.reject(rate), true
+		}
+		c.pendingRate, c.pendingFrom = 0, 0
+		if c.current.Connections >= MaxConnections {
+			// The step that reached the ceiling paid for itself, so there is
+			// nothing left to grow into and nothing left to take back. This is
+			// checked *here* rather than when the step was taken: a controller
+			// that latched at the maximum could never judge the step that got
+			// it there, which is exactly the step most worth judging.
+			c.stop("the pool reached the policy maximum")
 			return none, false
 		}
-		c.pendingRate = 0
+	}
+
+	if p.Remaining <= c.current.Connections {
+		// Fewer files left than connections in use: a new one would finish its
+		// handshake with nothing to carry. Checked after the validation above,
+		// so a step that has already been taken is still judged.
+		return none, false
 	}
 
 	want := Plan(c.remaining(p), c.measuredLink(p, rate), c.fixed)
@@ -194,13 +259,49 @@ func (c *Controller) Observe(p Progress) (Change, bool) {
 		return none, false
 	}
 	change := Change{From: c.current, To: c.current, Rate: rate}
-	c.pendingRate = rate
+	c.pendingRate, c.pendingFrom = rate, c.current.Connections
 	c.current.Connections = grown
 	change.To = c.current
-	if c.current.Connections >= MaxConnections {
-		c.stop("the pool reached the policy maximum")
-	}
 	return change, true
+}
+
+// eligible reports whether this report closes a window worth deciding on: long
+// enough, over enough finished files, and carrying enough bytes that the number
+// is a throughput rather than one file's latency.
+//
+// A report that fails any of the three is not an observation at all: it does
+// not replace the baseline, so the window keeps widening until it is evidence.
+// That is the difference between "measure every 250 ms and hope" and "decide
+// when there is something to decide on" (issue #215, stage 6).
+func (c *Controller) eligible(p Progress) bool {
+	window, files, bytes := p.Elapsed, p.Uploaded+p.Skipped, p.UploadedBytes
+	if c.haveLast {
+		window -= c.last.Elapsed
+		files -= c.last.Uploaded + c.last.Skipped
+		bytes -= c.last.UploadedBytes
+	}
+	if window < minObservation || files < minSamples {
+		return false
+	}
+	// A phase that is moving no bytes at all (a redeploy skipping everything)
+	// is judged on its files: it is never going to reach a byte threshold, and
+	// the throughput check below leaves it alone anyway.
+	return bytes == 0 || bytes >= minWindowBytes
+}
+
+// reject takes back the growth step the previous window motivated. The
+// connections opened for it stay open and every transfer running on them runs
+// to the end; what changes is where the files that are *left* go. Then the
+// controller settles: one step back is a correction, and a second one would be
+// the start of an oscillation.
+func (c *Controller) reject(rate float64) Change {
+	change := Change{From: c.current, To: c.current, Rate: rate, Before: c.pendingRate}
+	c.current.Connections = c.pendingFrom
+	change.To = c.current
+	c.pendingRate, c.pendingFrom = 0, 0
+	c.stop(fmt.Sprintf("%s did not improve on the %s measured before the last connection was added, so the remaining files go over %d connection(s)",
+		rateString(rate), rateString(change.Before), c.current.Connections))
+	return change
 }
 
 // throughput is the aggregate bytes per second of the window since the last
@@ -223,11 +324,50 @@ func (c *Controller) throughput(p Progress) float64 {
 // really carrying. The aggregate is divided by the streams that were actually
 // serving files, not by the pool size: a pool whose tail no worker reached
 // would make every connection look slower than it is.
+//
+// For a workload that cannot fill a stream the prior stays, because the
+// measurement is not one. See bandwidthBound.
 func (c *Controller) measuredLink(p Progress, rate float64) Link {
-	streams := min(c.current.Connections, c.current.Concurrency, p.Uploaded+p.Remaining)
 	l := c.link
+	if !c.bandwidthBound() {
+		return l
+	}
+	streams := min(c.current.Connections, c.current.Concurrency, p.Uploaded+p.Remaining)
 	l.StreamBytesPerSecond = rate / float64(max(streams, 1))
+	l.ThroughputSource = SourceRuntime // the transfer being tuned, which outranks everything else
 	return l
+}
+
+// bandwidthBound reports whether this transfer's byte rate says anything about
+// the link's bandwidth.
+//
+// A deployment of files that each fit in a single 32 KiB write packet never
+// fills a stream: what limits it is four round-trips per file, not bytes per
+// second, and its megabytes-per-second reading is a restatement of its
+// files-per-second reading. Feeding that number back in as a bandwidth makes
+// the link look catastrophically slow, which makes the remaining work look
+// enormous, which buys connections that cannot help. That is the stored 'small'
+// miss: 300 files of 4 KiB, widened from four connections to eight, measured
+// fastest at two.
+//
+// The round-trip half of the model does not need a runtime correction, because
+// nothing about it was guessed: the RTT was measured before the first file and
+// the file count is known. So for these workloads the pre-transfer plan already
+// had every input it was going to get, and the controller's job is only to
+// re-plan the work that is *left* (which is what an unsettled skip_unchanged
+// set still needs).
+//
+// The ninetieth percentile is the test rather than the mean or the largest
+// file, so a tree of small files with a few archives in it, where the bytes
+// really do come from files that can fill a stream, still gets a runtime
+// correction.
+func (c *Controller) bandwidthBound() bool {
+	size := c.workload.P90Upload
+	if size == 0 {
+		// A workload with no distribution: the largest file is all there is.
+		size = c.workload.LargestUpload
+	}
+	return size > packetBytes
 }
 
 // remaining is the workload the run still has in front of it. For a settled
@@ -251,7 +391,17 @@ func (c *Controller) remaining(p Progress) Workload {
 	if uploads > 0 {
 		largest = bytes / int64(uploads)
 	}
-	return Workload{Uploads: uploads, UploadBytes: bytes, LargestUpload: largest, Probes: probes}
+	// The shape carries over from the plan: which files are left is not known,
+	// but nothing observed so far suggests they are shaped differently from
+	// the ones that were planned.
+	return Workload{
+		Uploads:       uploads,
+		UploadBytes:   bytes,
+		LargestUpload: largest,
+		P50Upload:     c.workload.P50Upload,
+		P90Upload:     c.workload.P90Upload,
+		Probes:        probes,
+	}
 }
 
 func rateString(bytesPerSecond float64) string {
