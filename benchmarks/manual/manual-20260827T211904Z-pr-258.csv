@@ -1,0 +1,7 @@
+"scenario","build","ref","link_profile","rtt_p50_ms","control_single_mib_per_s","repeats","files","bytes","median_ms","min_ms","max_ms","mad_ms","mib_per_s","files_per_s","user_cpu_ms","sys_cpu_ms","cpu_percent","max_rss_bytes","go_gc_count","go_peak_goroutines","net_write_bytes","connections_opened","connections_refused","retries","errors","failed_runs"
+"large","baseline","main (4395ae2)","baseline",13.17,0.38,3,2,33554432,52836,52014,53254,418,0.61,0.04,461.15,524.03,1.83,8929280,0,25,33666924,2,0,0,0,0
+"mixed","baseline","main (4395ae2)","baseline",13.17,0.38,3,56,12189696,16431,16382,16964,49,0.71,3.41,214,241.85,2.72,11616256,1,110,12277300,6,0,0,0,0
+"small","baseline","main (4395ae2)","baseline",13.17,0.38,3,300,1228800,3986,3957,4287,29,0.29,75.26,179.56,227.38,9.78,12795904,5,106,1445164,4,0,0,0,0
+"large","candidate","refs/pull/258/merge (82d5a16)","baseline",13.17,0.38,3,2,33554432,53788,51382,54364,576,0.59,0.04,428.08,555.18,1.87,8929280,0,25,33666956,2,0,0,0,0
+"mixed","candidate","refs/pull/258/merge (82d5a16)","baseline",13.17,0.38,3,56,12189696,12799,12407,13717,392,0.91,4.38,215.68,234.9,3.48,12140544,2,127,12280892,8,0,0,0,0
+"small","candidate","refs/pull/258/merge (82d5a16)","baseline",13.17,0.38,3,300,1228800,3994,3303,4003,9,0.29,75.11,186.35,223.39,12.1,13058048,5,106,1445340,4,0,0,0,0
