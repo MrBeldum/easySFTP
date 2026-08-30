@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-08-27T21:19:04Z",
+  "generated_at": "2026-08-30T20:40:16Z",
   "generated_by": "cmd/easysftp-bench store",
   "documentation": "benchmarks/README.md",
   "layout": {
@@ -11,8 +11,44 @@
     "latest": "latest.{json,md}"
   },
   "keep_releases": 5,
-  "latest_release": "v3.7.0",
+  "latest_release": "v3.8.0",
   "entries": [
+    {
+      "kind": "release",
+      "version": "v3.8.0",
+      "label": null,
+      "official": true,
+      "recorded_at": "2026-08-30T20:40:16Z",
+      "commit": "12422ea7c8079441fbdb0d4d20a3eba7c84bb94c",
+      "run_url": "https://github.com/eiserv/easySFTP/actions/runs/33334275949",
+      "candidate_ref": "v3.8.0 (12422ea)",
+      "benchmark_kind": "standard",
+      "benchmark_schema_version": 2,
+      "runner": "self-hosted, Linux 7.0.0-30-generic, 10 cpu",
+      "environment": {
+        "runner": "self-hosted",
+        "os": "Linux",
+        "kernel": "7.0.0-30-generic",
+        "arch": "x86_64",
+        "cpu_model": "Intel(R) Xeon(R) CPU           E5645  @ 2.40GHz",
+        "cpus": 10,
+        "go_version": "go1.25.13",
+        "runner_name": "coolify-runner-O9nmBKiUox4Rm"
+      },
+      "link_profiles": [
+        "baseline"
+      ],
+      "rtt_p50_ms": 13.08,
+      "archived": false,
+      "json": "releases/release-v3.8.0.json",
+      "markdown": "releases/release-v3.8.0.md",
+      "median_ms": {
+        "large": 48954,
+        "mixed": 11720,
+        "small": 3633
+      },
+      "best_ms": {}
+    },
     {
       "kind": "manual",
       "version": null,
@@ -428,9 +464,9 @@
         "baseline"
       ],
       "rtt_p50_ms": 13.02,
-      "archived": false,
-      "json": "matrix/matrix-20260730T224549Z-main.json",
-      "markdown": "matrix/matrix-20260730T224549Z-main.md",
+      "archived": true,
+      "json": "archive/matrix/matrix-20260730T224549Z-main.json",
+      "markdown": "archive/matrix/matrix-20260730T224549Z-main.md",
       "median_ms": {},
       "best_ms": {
         "calib-100x64k": 7729,
@@ -464,9 +500,9 @@
       },
       "link_profiles": [],
       "rtt_p50_ms": null,
-      "archived": false,
-      "json": "matrix/matrix-20260728T121818Z-main.json",
-      "markdown": "matrix/matrix-20260728T121818Z-main.md",
+      "archived": true,
+      "json": "archive/matrix/matrix-20260728T121818Z-main.json",
+      "markdown": "archive/matrix/matrix-20260728T121818Z-main.md",
       "median_ms": {},
       "best_ms": {
         "large": 47884,
@@ -499,9 +535,9 @@
       },
       "link_profiles": [],
       "rtt_p50_ms": null,
-      "archived": false,
-      "json": "matrix/matrix-20260727T222956Z-main.json",
-      "markdown": "matrix/matrix-20260727T222956Z-main.md",
+      "archived": true,
+      "json": "archive/matrix/matrix-20260727T222956Z-main.json",
+      "markdown": "archive/matrix/matrix-20260727T222956Z-main.md",
       "median_ms": {},
       "best_ms": {
         "large": 47201,
@@ -524,9 +560,9 @@
       "environment": null,
       "link_profiles": [],
       "rtt_p50_ms": null,
-      "archived": false,
-      "json": "manual/manual-20260727T193100Z-perf-connection-pool.json",
-      "markdown": "manual/manual-20260727T193100Z-perf-connection-pool.md",
+      "archived": true,
+      "json": "archive/manual/manual-20260727T193100Z-perf-connection-pool.json",
+      "markdown": "archive/manual/manual-20260727T193100Z-perf-connection-pool.md",
       "median_ms": {
         "large": 70694,
         "mixed": 27665,
@@ -549,9 +585,9 @@
       "environment": null,
       "link_profiles": [],
       "rtt_p50_ms": null,
-      "archived": false,
-      "json": "releases/release-v3.3.2.json",
-      "markdown": "releases/release-v3.3.2.md",
+      "archived": true,
+      "json": "archive/releases/release-v3.3.2.json",
+      "markdown": "archive/releases/release-v3.3.2.md",
       "median_ms": {
         "large": 76306,
         "mixed": 28419,
