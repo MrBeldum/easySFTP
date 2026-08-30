@@ -219,6 +219,81 @@ expect_failure 'missing checksum entry' verify_release_checksum "$tmp/assets/eas
 printf '%064d  easysftp_linux_x64\n' 0 > "$tmp/wrong-checksum"
 expect_failure 'wrong checksum' verify_release_checksum "$tmp/assets/easysftp_linux_x64" "$tmp/wrong-checksum" 'easysftp_linux_x64'
 
+# Build provenance (issue #146). The SHA-256 check alone proves transport
+# integrity only, because checksums.txt comes from the same mutable release as
+# the binary it describes. These cover the three answers the check can give,
+# with a mock gh: verified, ran and failed, and could not run.
+mkdir -p "$tmp/ghbin"
+cat > "$tmp/ghbin/gh" <<'MOCK_GH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" != 'attestation' || "${2:-}" != 'verify' ]]; then
+  exit 2
+fi
+if [[ "${3:-}" == '--help' ]]; then
+  exit 0
+fi
+# The identity of the signer is the whole point: a run must not accept an
+# attestation from another repository or another workflow.
+saw_repo=0
+saw_workflow=0
+for arg in "$@"; do
+  case "$arg" in
+    eiserv/easySFTP) saw_repo=1 ;;
+    eiserv/easySFTP/.github/workflows/release-binaries.yml) saw_workflow=1 ;;
+  esac
+done
+if (( ! saw_repo || ! saw_workflow )); then
+  printf 'mock gh: verify_release_provenance must pin --repo and --signer-workflow\n' >&2
+  exit 1
+fi
+if [[ -z "${GH_TOKEN:-}" ]]; then
+  printf 'mock gh: no token was passed through\n' >&2
+  exit 1
+fi
+exit "${MOCK_GH_EXIT:-0}"
+MOCK_GH
+chmod +x "$tmp/ghbin/gh"
+
+# The three cases differ only in the environment the check runs in. The
+# failing one is a function because expect_failure takes a command, and its
+# body is a subshell so the environment it sets does not leak into the rest of
+# this script.
+provenance_asset="$tmp/assets/easysftp_linux_x64"
+
+provenance_ok=$(PATH="$tmp/ghbin:$PATH" GH_TOKEN=mock-token \
+  verify_release_provenance "$provenance_asset" easysftp_linux_x64 v1.2.3)
+expect_equal 'verified provenance is reported' \
+  'Verified build provenance for easysftp_linux_x64 (v1.2.3, built by eiserv/easySFTP/.github/workflows/release-binaries.yml)' \
+  "$provenance_ok"
+
+failing_provenance() (
+  PATH="$tmp/ghbin:$PATH" GH_TOKEN=mock-token MOCK_GH_EXIT=1 \
+    verify_release_provenance "$provenance_asset" easysftp_linux_x64 v1.2.3
+)
+expect_failure 'a failed provenance check fails the run' failing_provenance
+
+# A runner without the tooling keeps working on the checksum alone and says so.
+# Tampering fails closed; a missing prerequisite does not break a deploy. Both
+# ways of missing it are covered: no gh on PATH, and no token to read the
+# attestation with.
+mkdir -p "$tmp/nogh"
+no_gh_warning=$(PATH="$tmp/nogh" \
+  verify_release_provenance "$provenance_asset" easysftp_linux_x64 v1.2.3)
+no_token_warning=$(PATH="$tmp/ghbin:$PATH" GH_TOKEN='' GITHUB_TOKEN='' \
+  verify_release_provenance "$provenance_asset" easysftp_linux_x64 v1.2.3)
+for warning in "$no_gh_warning" "$no_token_warning"; do
+  case "$warning" in
+    '::warning::easySFTP action: could not verify the build provenance'*)
+      echo 'PASS: an unavailable provenance check warns instead of failing'
+      ;;
+    *)
+      echo "FAIL: an unavailable provenance check should warn, got '$warning'" >&2
+      failures=$((failures + 1))
+      ;;
+  esac
+done
+
 if (( failures != 0 )); then
   echo "$failures action test(s) failed" >&2
   exit 1
