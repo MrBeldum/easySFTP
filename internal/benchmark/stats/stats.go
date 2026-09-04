@@ -6,13 +6,19 @@
 // a slightly different rule is not comparable to the ones already published
 // (issue #190).
 //
-// Three of those edge cases are load-bearing and are pinned by tests:
+// Four of those edge cases are load-bearing and are pinned by tests:
 //
 //   - The median is the *lower* middle value for an even sample count, which is
 //     why an odd number of repeats is the better choice.
 //   - The median absolute deviation is null below two samples rather than 0: a
 //     single repeat has no measured spread at all, and a 0 there reads as
 //     perfect precision (issue #184, phase 2).
+//   - At exactly two samples the MAD is structurally 0 under that lower-middle
+//     median (the median is the min, one deviation is 0, and the lower-middle
+//     of the deviations is that 0). Three is the smallest repeat count that
+//     can yield a non-zero MAD (issue #227). The field stays populated at two
+//     so stored results stay comparable; callers that need an informative
+//     spread must measure at least three times.
 //   - A value that was never reported is null, and null is not zero. jq sorts
 //     null below every number, treats it as the identity of addition, and
 //     propagates it out of min and max over an empty list. A median over a
@@ -67,7 +73,9 @@ func MedianOf(xs []float64) float64 {
 //
 // It is the spread metric to compare a delta against: a single slow repeat,
 // which is the normal failure mode of a shared host, moves it far less than it
-// moves a standard deviation.
+// moves a standard deviation. With the lower-middle median, two samples always
+// produce Mad == 0 (issue #227); three is the smallest count that can be
+// informative.
 func Mad(xs []float64) *float64 {
 	if len(xs) < 2 {
 		return nil

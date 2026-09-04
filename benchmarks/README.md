@@ -516,9 +516,15 @@ faster or slower, and `comparison[].within_noise` says so directly.
 
 A single repeat has no measured spread, so `mad_ms` is then `null` (empty in the
 CSV) rather than 0, which would read as perfect precision. That is the normal
-case for a matrix run, whose `REPEATS` default is 1 because the grid is already
-hours: its deltas have no noise floor to compare against, and the canary above is
-what stands in for one. Results stored before this change carry 0 there.
+case for a manual matrix run, whose `REPEATS` default is 1 because the grid is
+already hours: its deltas have no noise floor to compare against, and the canary
+above is what stands in for one. Results stored before this change carry 0 there.
+
+Two repeats populate `mad_ms` but under the lower-middle median it is
+structurally 0 for every cell (the median is the faster sample, so one
+deviation is 0 and that 0 is the MAD). The release matrix therefore defaults to
+three repeats, the smallest count that can yield an informative MAD (issue
+#227).
 
 Before reading a delta at all, check the run's single-stream control against the
 scenario's own MiB/s. A scenario sitting at the control was limited by the path,

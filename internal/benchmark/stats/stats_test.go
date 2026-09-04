@@ -57,6 +57,31 @@ func TestMadIsNullBelowTwoSamples(t *testing.T) {
 	}
 }
 
+func TestMadAtTwoSamplesIsStructurallyZero(t *testing.T) {
+	// Issue #227: with the lower-middle median, two samples collapse. The median
+	// is the min, one absolute deviation is therefore 0, and the lower-middle of
+	// the deviations is that 0. Every cell in a repeats:2 sweep reports mad_ms
+	// == 0 and median_ms == min_ms (best-of-two labelled as a median). The field
+	// stays populated so stored results stay comparable; three is the smallest
+	// informative repeat count.
+	got := stats.Mad([]float64{10, 40})
+	if got == nil || *got != 0 {
+		t.Errorf("mad of two samples = %v, want 0", got)
+	}
+	if got := stats.MedianOf([]float64{10, 40}); got != 10 {
+		t.Errorf("median of two samples = %v, want the min (10)", got)
+	}
+}
+
+func TestMadAtThreeSamplesCanBeNonZero(t *testing.T) {
+	// The release matrix default after #227: three samples, lower-middle median
+	// 20, deviations 10/0/10, MAD 10.
+	got := stats.Mad([]float64{10, 20, 30})
+	if got == nil || *got != 10 {
+		t.Errorf("mad of three samples = %v, want 10", got)
+	}
+}
+
 func TestMadIsTheMedianDeviation(t *testing.T) {
 	// Deviations from the median 20 are 10, 0, 10, 20; their lower-middle value
 	// is 10. A standard deviation would have been dragged up by the outlier,
