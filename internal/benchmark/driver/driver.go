@@ -99,9 +99,26 @@ type run struct {
 func logf(format string, args ...any)  { fmt.Printf(format+"\n", args...) }
 func warnf(format string, args ...any) { fmt.Printf("::warning::"+format+"\n", args...) }
 
+
+// informativeRepeats raises two to three. Under the lower-middle median in
+// internal/benchmark/stats, two samples always report mad_ms == 0 and
+// median_ms == min_ms (best-of-two labelled as a median). Three is the
+// smallest count that can yield an informative MAD (issue #227). One-repeat
+// quick grids and already-sufficient counts are left alone.
+func informativeRepeats(n int) int {
+	if n == 2 {
+		return 3
+	}
+	return n
+}
+
 func newRun(opts Options) (*run, error) {
 	if opts.Repeats < 1 {
 		return nil, fmt.Errorf("a run needs at least one repeat, got %d", opts.Repeats)
+	}
+	if raised := informativeRepeats(opts.Repeats); raised != opts.Repeats {
+		warnf("REPEATS=%d yields mad_ms=0 under the lower-middle median (issue #227); measuring %d times instead", opts.Repeats, raised)
+		opts.Repeats = raised
 	}
 	if err := checkRemoteBase(opts.RemoteBase); err != nil {
 		return nil, err
